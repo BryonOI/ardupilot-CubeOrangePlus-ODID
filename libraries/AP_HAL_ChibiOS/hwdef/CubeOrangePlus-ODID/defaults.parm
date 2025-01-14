@@ -1,4 +1,4 @@
-@include ./CubeOrangePlus/defaults.parm
+@include ../CubeOrangePlus/defaults.parm
 
 DID_ENABLE 1 @READONLY
 DID_OPTIONS 1 @READONLY
