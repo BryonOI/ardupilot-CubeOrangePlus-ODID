@@ -92,7 +92,7 @@
 #include "GCS_MAVLink_Copter.h"
 #include "GCS_Copter.h"
 #include "AP_Rally.h"           // Rally point library
-#include "AP_Arming.h"
+#include "AP_Arming_Copter.h"
 
 #include <AP_ExternalControl/AP_ExternalControl_config.h>
 #if AP_EXTERNAL_CONTROL_ENABLED
@@ -162,6 +162,10 @@
 
 #if AP_OAPATHPLANNER_ENABLED && !AP_FENCE_ENABLED
   #error AP_OAPathPlanner relies on AP_FENCE_ENABLED which is disabled
+#endif
+
+#if MODE_AUTOROTATE_ENABLED && !AP_RPM_ENABLED
+  #error AC_Autorotation relies on AP_RPM_ENABLED which is disabled
 #endif
 
 #if HAL_ADSB_ENABLED

@@ -320,7 +320,7 @@ public:
 
     enum LearnType {
         LEARN_NONE=0,
-        LEARN_INTERNAL=1,
+        // LEARN_INTERNAL=1,
         LEARN_EKF=2,
         LEARN_INFLIGHT=3
     };
@@ -498,6 +498,9 @@ private:
 #endif
 #if AP_COMPASS_BMM350_ENABLED
         DRIVER_BMM350   =21,
+#endif
+#if AP_COMPASS_IIS2MDC_ENABLED
+        DRIVER_IIS2MDC  =22,
 #endif
 };
 

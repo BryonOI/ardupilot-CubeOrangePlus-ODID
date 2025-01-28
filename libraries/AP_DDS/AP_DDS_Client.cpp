@@ -68,9 +68,9 @@ static constexpr uint16_t DELAY_AIRSPEED_TOPIC_MS = AP_DDS_DELAY_AIRSPEED_TOPIC_
 #if AP_DDS_GEOPOSE_PUB_ENABLED
 static constexpr uint16_t DELAY_GEO_POSE_TOPIC_MS = AP_DDS_DELAY_GEO_POSE_TOPIC_MS;
 #endif // AP_DDS_GEOPOSE_PUB_ENABLED
-#if AP_DDS_GOAL_PUB_ENABLED & AP_SCRIPTING_ENABLED
+#if AP_DDS_GOAL_PUB_ENABLED
 static constexpr uint16_t DELAY_GOAL_TOPIC_MS = AP_DDS_DELAY_GOAL_TOPIC_MS ;
-#endif // AP_DDS_GOAL_PUB_ENABLED & AP_SCRIPTING_ENABLED
+#endif // AP_DDS_GOAL_PUB_ENABLED
 #if AP_DDS_CLOCK_PUB_ENABLED
 static constexpr uint16_t DELAY_CLOCK_TOPIC_MS =AP_DDS_DELAY_CLOCK_TOPIC_MS;
 #endif // AP_DDS_CLOCK_PUB_ENABLED
@@ -154,8 +154,8 @@ const AP_Param::GroupInfo AP_DDS_Client::var_info[] {
 
     // @Param: _MAX_RETRY
     // @DisplayName: DDS ping max attempts
-    // @Description: The maximum number of times the DDS client will attempt to ping the XRCE agent before exiting.
-    // @Range: 1 100
+    // @Description: The maximum number of times the DDS client will attempt to ping the XRCE agent before exiting. Set to 0 to allow unlimited retries.
+    // @Range: 0 100
     // @RebootRequired: True
     // @Increment: 1
     // @User: Standard
@@ -567,7 +567,7 @@ void AP_DDS_Client::update_topic(geographic_msgs_msg_GeoPoseStamped& msg)
 }
 #endif // AP_DDS_GEOPOSE_PUB_ENABLED
 
-#if AP_DDS_GOAL_PUB_ENABLED & AP_SCRIPTING_ENABLED
+#if AP_DDS_GOAL_PUB_ENABLED
 bool AP_DDS_Client::update_topic_goal(geographic_msgs_msg_GeoPointStamped& msg)
 {
     const auto &vehicle = AP::vehicle();
@@ -598,7 +598,7 @@ bool AP_DDS_Client::update_topic_goal(geographic_msgs_msg_GeoPointStamped& msg)
         return false;
     }
 }
-#endif // AP_DDS_GOAL_PUB_ENABLED & AP_SCRIPTING_ENABLED
+#endif // AP_DDS_GOAL_PUB_ENABLED
 
 #if AP_DDS_IMU_PUB_ENABLED
 void AP_DDS_Client::update_topic(sensor_msgs_msg_Imu& msg)
@@ -1180,6 +1180,7 @@ void AP_DDS_Client::on_request(uxrSession* uxr_session, uxrObjectId object_id, u
  */
 void AP_DDS_Client::main_loop(void)
 {
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "%s initializing...", msg_prefix);
     if (!init_transport()) {
         return;
     }
@@ -1192,9 +1193,16 @@ void AP_DDS_Client::main_loop(void)
         }
 
         // check ping
-        if (!uxr_ping_agent_attempts(comm, ping_timeout_ms, ping_max_retry)) {
-            GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "%s No ping response, exiting", msg_prefix);
-            return;
+        if (ping_max_retry == 0) {
+            if (!uxr_ping_agent(comm, ping_timeout_ms)) {
+                GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "%s No ping response, retrying", msg_prefix);
+                continue;
+            }
+        } else {
+            if (!uxr_ping_agent_attempts(comm, ping_timeout_ms, ping_max_retry)) {
+                GCS_SEND_TEXT(MAV_SEVERITY_WARNING, "%s No ping response, exiting", msg_prefix);
+                continue;
+            }
         }
 
         // create session
@@ -1628,7 +1636,7 @@ void AP_DDS_Client::write_gps_global_origin_topic()
 }
 #endif // AP_DDS_GPS_GLOBAL_ORIGIN_PUB_ENABLED
 
-#if AP_DDS_GOAL_PUB_ENABLED & AP_SCRIPTING_ENABLED
+#if AP_DDS_GOAL_PUB_ENABLED
 void AP_DDS_Client::write_goal_topic()
 {
     WITH_SEMAPHORE(csem);
@@ -1642,7 +1650,7 @@ void AP_DDS_Client::write_goal_topic()
         }
     }
 }
-#endif // AP_DDS_GOAL_PUB_ENABLED & AP_SCRIPTING_ENABLED
+#endif // AP_DDS_GOAL_PUB_ENABLED
 
 #if AP_DDS_STATUS_PUB_ENABLED
 void AP_DDS_Client::write_status_topic()
@@ -1740,14 +1748,14 @@ void AP_DDS_Client::update()
         write_gps_global_origin_topic();
     }
 #endif // AP_DDS_GPS_GLOBAL_ORIGIN_PUB_ENABLED
-#if AP_DDS_GOAL_PUB_ENABLED & AP_SCRIPTING_ENABLED
+#if AP_DDS_GOAL_PUB_ENABLED
     if (cur_time_ms - last_goal_time_ms > DELAY_GOAL_TOPIC_MS) {
         if (update_topic_goal(goal_topic)) {
             write_goal_topic();
         }
         last_goal_time_ms = cur_time_ms;
     }
-#endif // AP_DDS_GOAL_PUB_ENABLED & AP_SCRIPTING_ENABLED
+#endif // AP_DDS_GOAL_PUB_ENABLED
 #if AP_DDS_STATUS_PUB_ENABLED
     if (cur_time_ms - last_status_check_time_ms > DELAY_STATUS_TOPIC_MS) {
         if (update_topic(status_topic)) {

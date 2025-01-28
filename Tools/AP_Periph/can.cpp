@@ -346,10 +346,10 @@ void AP_Periph_FW::handle_param_executeopcode(CanardInstance* canard_instance, C
         AP_Param::erase_all();
         AP_Param::load_all();
         AP_Param::setup_sketch_defaults();
-#ifdef HAL_PERIPH_ENABLE_GPS
+#if AP_PERIPH_GPS_ENABLED
         AP_Param::setup_object_defaults(&gps, gps.var_info);
 #endif
-#ifdef HAL_PERIPH_ENABLE_BATTERY
+#if AP_PERIPH_BATTERY_ENABLED
         AP_Param::setup_object_defaults(&battery, battery_lib.var_info);
 #endif
 #ifdef HAL_PERIPH_ENABLE_MAG
@@ -474,7 +474,7 @@ void AP_Periph_FW::handle_allocation_response(CanardInstance* canard_instance, C
         canardSetLocalNodeID(canard_instance, msg.node_id);
         printf("IF%d Node ID allocated: %d\n", dronecan.dna_interface, msg.node_id);
 
-#if defined(HAL_PERIPH_ENABLE_GPS) && (HAL_NUM_CAN_IFACES >= 2) && GPS_MOVING_BASELINE
+#if AP_PERIPH_GPS_ENABLED && (HAL_NUM_CAN_IFACES >= 2) && GPS_MOVING_BASELINE
         if (g.gps_mb_only_can_port) {
             // we need to assign the unallocated port to be used for Moving Baseline only
             gps_mb_can_port = (dronecan.dna_interface+1)%HAL_NUM_CAN_IFACES;
@@ -797,15 +797,23 @@ void AP_Periph_FW::onTransferReceived(CanardInstance* canard_instance,
         handle_begin_firmware_update(canard_instance, transfer);
         break;
 
-    case UAVCAN_PROTOCOL_RESTARTNODE_ID:
-        printf("RestartNode\n");
-        hal.scheduler->delay(10);
-        prepare_reboot();
-#if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
-        NVIC_SystemReset();
-#elif CONFIG_HAL_BOARD == HAL_BOARD_SITL
-        HAL_SITL::actually_reboot();
-#endif
+    case UAVCAN_PROTOCOL_RESTARTNODE_ID: {
+            printf("RestartNode\n");
+            uavcan_protocol_RestartNodeResponse pkt {
+                ok: true,
+            };
+            uint8_t buffer[UAVCAN_PROTOCOL_RESTARTNODE_RESPONSE_MAX_SIZE];
+            uint16_t total_size = uavcan_protocol_RestartNodeResponse_encode(&pkt, buffer, !canfdout());
+            canard_respond(canard_instance,
+                    transfer,
+                    UAVCAN_PROTOCOL_RESTARTNODE_SIGNATURE,
+                    UAVCAN_PROTOCOL_RESTARTNODE_ID,
+                    &buffer[0],
+                    total_size);
+
+            // schedule a reboot to occur
+            reboot_request_ms = AP_HAL::millis();
+        }
         break;
 
     case UAVCAN_PROTOCOL_PARAM_GETSET_ID:
@@ -832,7 +840,7 @@ void AP_Periph_FW::onTransferReceived(CanardInstance* canard_instance,
         handle_arming_status(canard_instance, transfer);
         break;
 
-#ifdef HAL_PERIPH_ENABLE_GPS
+#if AP_PERIPH_GPS_ENABLED
     case UAVCAN_EQUIPMENT_GNSS_RTCMSTREAM_ID:
         handle_RTCMStream(canard_instance, transfer);
         break;
@@ -842,7 +850,7 @@ void AP_Periph_FW::onTransferReceived(CanardInstance* canard_instance,
         handle_MovingBaselineData(canard_instance, transfer);
         break;
 #endif
-#endif // HAL_PERIPH_ENABLE_GPS
+#endif // AP_PERIPH_GPS_ENABLED
 
 #if AP_UART_MONITOR_ENABLED
     case UAVCAN_TUNNEL_TARGETTED_ID:
@@ -955,7 +963,7 @@ bool AP_Periph_FW::shouldAcceptTransfer(const CanardInstance* canard_instance,
         *out_data_type_signature = UAVCAN_EQUIPMENT_INDICATION_LIGHTSCOMMAND_SIGNATURE;
         return true;
 #endif
-#ifdef HAL_PERIPH_ENABLE_GPS
+#if AP_PERIPH_GPS_ENABLED
     case UAVCAN_EQUIPMENT_GNSS_RTCMSTREAM_ID:
         *out_data_type_signature = UAVCAN_EQUIPMENT_GNSS_RTCMSTREAM_SIGNATURE;
         return true;
@@ -965,7 +973,7 @@ bool AP_Periph_FW::shouldAcceptTransfer(const CanardInstance* canard_instance,
         *out_data_type_signature = ARDUPILOT_GNSS_MOVINGBASELINEDATA_SIGNATURE;
         return true;
 #endif
-#endif // HAL_PERIPH_ENABLE_GPS
+#endif // AP_PERIPH_GPS_ENABLED
 
 #if AP_UART_MONITOR_ENABLED
     case UAVCAN_TUNNEL_TARGETTED_ID:
@@ -1877,13 +1885,13 @@ void AP_Periph_FW::can_update()
 #ifdef HAL_PERIPH_ENABLE_MAG
         can_mag_update();
 #endif
-#ifdef HAL_PERIPH_ENABLE_GPS
+#if AP_PERIPH_GPS_ENABLED
         can_gps_update();
 #endif
 #if AP_UART_MONITOR_ENABLED
         send_serial_monitor_data();
 #endif
-#ifdef HAL_PERIPH_ENABLE_BATTERY
+#if AP_PERIPH_BATTERY_ENABLED
         can_battery_update();
 #endif
 #ifdef HAL_PERIPH_ENABLE_BARO
@@ -1949,6 +1957,16 @@ void AP_Periph_FW::can_update()
 #endif // HAL_PERIPH_CAN_MIRROR
 
         }
+    }
+
+    // if there is a reboot scheduled, do it 1 second after request to allow the acknowledgement to be sent
+    if (reboot_request_ms != 0 && (AP_HAL::millis() - reboot_request_ms > 1000)) {
+        prepare_reboot();
+#if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
+        NVIC_SystemReset();
+#elif CONFIG_HAL_BOARD == HAL_BOARD_SITL
+        HAL_SITL::actually_reboot();
+#endif
     }
 }
 
